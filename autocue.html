@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Autocue</title>
+<style>
+  :root {
+    --accent: #ffdd33;     /* shared LineLearner highlighter */
+    --mono: "Courier New", ui-monospace, "Cascadia Mono", Menlo, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; background: #000; color: #fff; overflow: hidden; }
+  body { font-family: var(--sans); }
+
+  /* ---------------- Setup screen ---------------- */
+  #setup {
+    position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column;
+    gap: 16px; padding: clamp(18px, 4vw, 40px);
+    background: #000; overflow: auto;
+  }
+  #setup h1 {
+    margin: 0; font-family: var(--mono); font-size: 15px; letter-spacing: .26em;
+    text-transform: uppercase; color: var(--accent); font-weight: 700;
+  }
+  #setup p { margin: 0; color: #9a9a9a; font-size: 14px; line-height: 1.5; }
+  textarea {
+    flex: 1; min-height: 38vh; resize: vertical; width: 100%;
+    background: #0c0c0c; color: #fff; border: 1px solid #2a2a2a; border-radius: 6px;
+    padding: 14px; font-family: var(--mono); font-size: 15px; line-height: 1.5;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+    text-transform: uppercase; color: #8a8a8a;
+  }
+  .check { display: flex; align-items: center; gap: 9px; color: #cfcfcf; font-size: 14px; }
+  .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+  input[type="range"] { width: 200px; max-width: 60vw; accent-color: var(--accent); }
+  .file-btn, .start-btn, .hud button {
+    font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase;
+    cursor: pointer; border-radius: 4px;
+  }
+  .file-btn {
+    font-size: 12px; color: #fff; background: transparent;
+    border: 1px solid #3a3a3a; padding: 11px 16px;
+  }
+  .start-btn {
+    font-size: 15px; font-weight: 700; color: #000; background: var(--accent);
+    border: none; padding: 16px 30px; min-height: 52px;
+  }
+  .actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  input[type="file"] { display: none; }
+
+  /* ---------------- Prompter ---------------- */
+  #prompter { position: fixed; inset: 0; z-index: 10; display: none; }
+  #scroller {
+    position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch; touch-action: pan-y;
+    scrollbar-width: none;          /* swipe / drag to reposition; no visible bar */
+  }
+  #scroller::-webkit-scrollbar { display: none; }
+  #content {
+    /* big top zone = lead-in runway you can swipe into before rolling */
+    padding: 140vh clamp(20px, 7vw, 120px) 60vh;
+    font-size: var(--cue-size, 52px); line-height: 1.5; font-weight: 600;
+    white-space: pre-wrap; word-wrap: break-word;
+    transition: transform .15s ease;
+  }
+  #content.mirror { transform: scaleX(-1); }
+
+  /* Heads-up controls */
+  .hud {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: center;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    background: linear-gradient(transparent, rgba(0,0,0,.82) 40%);
+    transition: opacity .3s ease; opacity: 1;
+  }
+  .hud.hidden { opacity: 0; pointer-events: none; }
+  .hud .group { display: flex; align-items: center; gap: 8px; }
+  .hud .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: #9a9a9a; }
+  .hud button {
+    font-size: 13px; color: #fff; background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.18); min-height: 44px; min-width: 44px; padding: 0 14px;
+  }
+  .hud button.on { color: #000; background: var(--accent); border-color: var(--accent); }
+  .hud #playBtn { min-width: 92px; font-weight: 700; }
+  .hud #speedVal { font-family: var(--mono); color: var(--accent); font-size: 13px; min-width: 64px; }
+
+  @media (max-width: 560px) {
+    .hud .lbl.long { display: none; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ============ SETUP ============ -->
+  <div id="setup">
+    <h1>Autocue</h1>
+    <p>Paste your script below (or load a .txt file), then press Start. The text is shown exactly as written. White text scrolls up on black — adjust the speed any time while it runs.</p>
+    <textarea id="text" placeholder="Paste your script here…
+&#10;ROSS: I told you I'd get you out if you behaved.
+JUAN: Eight million dollars. Over three years."></textarea>
+    <div class="row">
+      <label class="file-btn" for="file">Load file…</label>
+      <input type="file" id="file" accept=".txt,text/plain">
+      <label class="check"><input type="checkbox" id="mirror"> Mirror (flip horizontally for teleprompter glass)</label>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Text size</label>
+        <input type="range" id="sizeSetup" min="28" max="120" value="52">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="start-btn" id="startBtn">Start prompter</button>
+      <span class="lbl" style="font-family:var(--mono);font-size:11px;color:#777;letter-spacing:.1em;">SPACE play/pause · ↑↓ speed · +− size · swipe to reposition · ESC edit</span>
+    </div>
+  </div>
+
+  <!-- ============ PROMPTER ============ -->
+  <div id="prompter">
+    <div id="scroller"><div id="content"></div></div>
+    <div class="hud" id="hud">
+      <button id="playBtn">Play</button>
+      <div class="group">
+        <span class="lbl long">Speed</span>
+        <button id="slower">&minus;</button>
+        <input type="range" id="speed" min="5" max="260" step="1" value="60" style="width:200px;max-width:48vw;">
+        <button id="faster">+</button>
+        <span id="speedVal">60 px/s</span>
+      </div>
+      <div class="group">
+        <span class="lbl long">Size</span>
+        <button id="smaller">A&minus;</button>
+        <button id="bigger">A+</button>
+      </div>
+      <div class="group">
+        <button id="fsBtn">Full</button>
+        <button id="editBtn">Edit</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var setup = $('setup'), prompter = $('prompter'),
+      scroller = $('scroller'), content = $('content');
+
+  var playing = false, raf = null, lastT = 0, acc = 0;
+  var scrubbing = false;  // true while the user is swipe-scrolling
+
+  // Persisted settings (survive Edit round-trips and reloads).
+  function load(key, dflt) { var v = parseInt(localStorage.getItem(key), 10); return isNaN(v) ? dflt : v; }
+  var speed = load('autocue_speed', 60);  // px per second
+  var size = load('autocue_size', 52);    // px font size
+
+  // ---- scrolling loop ----
+  function frame(t) {
+    if (!playing) return;
+    if (scrubbing) { lastT = t; raf = requestAnimationFrame(frame); return; }
+    if (!lastT) lastT = t;
+    var dt = (t - lastT) / 1000; lastT = t;
+    acc += speed * dt;
+    var whole = Math.floor(acc);
+    if (whole > 0) { scroller.scrollTop += whole; acc -= whole; }
+    if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) {
+      pause();                 // reached the end
+      return;
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  function play() {
+    if (playing) return;
+    playing = true; lastT = 0;
+    $('playBtn').textContent = 'Pause';
+    $('playBtn').classList.add('on');
+    raf = requestAnimationFrame(frame);
+    scheduleHide();
+  }
+  function pause() {
+    playing = false;
+    if (raf) cancelAnimationFrame(raf);
+    $('playBtn').textContent = 'Play';
+    $('playBtn').classList.remove('on');
+    showHud();
+  }
+  function toggle() { playing ? pause() : play(); }
+
+  // ---- HUD auto-hide ----
+  var hideTimer = null;
+  function showHud() { hud.classList.remove('hidden'); }
+  function scheduleHide() {
+    clearTimeout(hideTimer);
+    if (!playing) return;
+    hideTimer = setTimeout(function () { hud.classList.add('hidden'); }, 2600);
+  }
+  function bumpHud() { showHud(); scheduleHide(); }
+
+  // ---- settings ---- (speed slider value IS px/s, for fine control)
+  function setSpeed(px) {
+    speed = Math.max(5, Math.min(260, Math.round(px)));
+    $('speed').value = speed;
+    $('speedVal').textContent = speed + ' px/s';
+    localStorage.setItem('autocue_speed', speed);
+  }
+  function setSize(px) {
+    size = Math.max(24, Math.min(160, px));
+    content.style.setProperty('--cue-size', size + 'px');
+    $('sizeSetup').value = Math.max(28, Math.min(120, size));
+    localStorage.setItem('autocue_size', size);
+  }
+
+  // ---- start / stop ----
+  function start() {
+    var txt = $('text').value.replace(/\s+$/, '');
+    if (!txt.trim()) { $('text').focus(); return; }
+    content.textContent = txt;
+    setSize(parseInt($('sizeSetup').value, 10));   // text size from the edit page
+    setSpeed(speed);                                // keep the saved speed
+    content.classList.toggle('mirror', $('mirror').checked);
+    setup.style.display = 'none';
+    prompter.style.display = 'block';
+    acc = 0;
+    // Rest the first line low on screen: visible, with blank runway above to
+    // swipe into for more lead-in. (Layout must be live to measure padding.)
+    requestAnimationFrame(function () {
+      var pad = parseFloat(getComputedStyle(content).paddingTop) || 0;
+      scroller.scrollTop = Math.max(0, pad - scroller.clientHeight * 0.82);
+    });
+    showHud();
+    pause();   // start idle; tap (or Space) to roll
+  }
+  function edit() {
+    pause();
+    prompter.style.display = 'none';
+    setup.style.display = 'flex';
+  }
+
+  // ---- wire up setup ----
+  $('startBtn').addEventListener('click', start);
+  $('file').addEventListener('change', function (e) {
+    var f = e.target.files[0]; if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { $('text').value = r.result; };
+    r.readAsText(f);
+  });
+  // ---- wire up prompter ----
+  // Tap the script toggles play/pause; a swipe (drag) repositions instead.
+  var downY = 0, downScroll = 0, moved = false;
+  scroller.addEventListener('pointerdown', function (e) {
+    downY = e.clientY; downScroll = scroller.scrollTop; moved = false;
+    scrubbing = true;
+    try { scroller.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  scroller.addEventListener('pointermove', function (e) {
+    if (!scrubbing) return;
+    var dy = e.clientY - downY;
+    if (Math.abs(dy) > 5) moved = true;
+    if (moved) scroller.scrollTop = downScroll - dy;   // text follows the finger
+  });
+  function endScrub(e) {
+    if (!scrubbing) return;
+    scrubbing = false;
+    try { scroller.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (!moved) toggle();      // it was a tap, not a swipe
+    else bumpHud();
+  }
+  scroller.addEventListener('pointerup', endScrub);
+  scroller.addEventListener('pointercancel', endScrub);
+
+  $('playBtn').addEventListener('click', function (e) { e.stopPropagation(); toggle(); });
+  $('speed').addEventListener('input', function (e) { e.stopPropagation(); setSpeed(parseInt(this.value, 10)); bumpHud(); });
+  $('slower').addEventListener('click', function (e) { e.stopPropagation(); setSpeed(speed - 2); bumpHud(); });
+  $('faster').addEventListener('click', function (e) { e.stopPropagation(); setSpeed(speed + 2); bumpHud(); });
+  $('smaller').addEventListener('click', function (e) { e.stopPropagation(); setSize(size - 4); bumpHud(); });
+  $('bigger').addEventListener('click', function (e) { e.stopPropagation(); setSize(size + 4); bumpHud(); });
+  $('editBtn').addEventListener('click', function (e) { e.stopPropagation(); edit(); });
+  $('fsBtn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (!document.fullscreenElement) {
+      (document.documentElement.requestFullscreen || function () {}).call(document.documentElement);
+      this.classList.add('on');
+    } else {
+      (document.exitFullscreen || function () {}).call(document);
+      this.classList.remove('on');
+    }
+  });
+
+  // reveal HUD on any movement/touch while playing
+  ['mousemove', 'touchstart'].forEach(function (ev) {
+    prompter.addEventListener(ev, bumpHud, { passive: true });
+  });
+
+  // ---- keyboard ----
+  document.addEventListener('keydown', function (e) {
+    if (setup.style.display !== 'none') return;   // only in prompter
+    switch (e.key) {
+      case ' ': case 'Enter': e.preventDefault(); toggle(); break;
+      case 'ArrowUp': e.preventDefault(); setSpeed(speed + 2); bumpHud(); break;
+      case 'ArrowDown': e.preventDefault(); setSpeed(speed - 2); bumpHud(); break;
+      case '+': case '=': setSize(size + 4); bumpHud(); break;
+      case '-': case '_': setSize(size - 4); bumpHud(); break;
+      case 'Escape': edit(); break;
+    }
+  });
+
+  // ---- init: reflect saved settings in the controls ----
+  $('mirror').checked = localStorage.getItem('autocue_mirror') === '1';
+  $('mirror').addEventListener('change', function () {
+    localStorage.setItem('autocue_mirror', this.checked ? '1' : '0');
+  });
+  $('sizeSetup').value = Math.max(28, Math.min(120, size));
+  $('speed').value = speed;
+  $('speedVal').textContent = speed + ' px/s';
+})();
+</script>
+</body>
+</html>
