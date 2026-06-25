@@ -110,12 +110,6 @@ JUAN: Eight million dollars. Over three years."></textarea>
       <input type="file" id="file" accept=".txt,text/plain">
       <label class="check"><input type="checkbox" id="mirror"> Mirror (flip horizontally for teleprompter glass)</label>
     </div>
-    <div class="row">
-      <div class="field">
-        <label>Text size</label>
-        <input type="range" id="sizeSetup" min="28" max="120" value="52">
-      </div>
-    </div>
     <div class="actions">
       <button class="start-btn" id="startBtn">Start prompter</button>
       <span class="lbl" style="font-family:var(--mono);font-size:11px;color:#777;letter-spacing:.1em;">SPACE play/pause · ↑↓ speed · +− size · swipe to reposition · ESC edit</span>
@@ -213,7 +207,6 @@ JUAN: Eight million dollars. Over three years."></textarea>
   function setSize(px) {
     size = Math.max(24, Math.min(160, px));
     content.style.setProperty('--cue-size', size + 'px');
-    $('sizeSetup').value = Math.max(28, Math.min(120, size));
     localStorage.setItem('autocue_size', size);
   }
 
@@ -222,7 +215,7 @@ JUAN: Eight million dollars. Over three years."></textarea>
     var txt = $('text').value.replace(/\s+$/, '');
     if (!txt.trim()) { $('text').focus(); return; }
     content.textContent = txt;
-    setSize(parseInt($('sizeSetup').value, 10));   // text size from the edit page
+    setSize(size);                                  // restore saved text size
     setSpeed(speed);                                // keep the saved speed
     content.classList.toggle('mirror', $('mirror').checked);
     setup.style.display = 'none';
@@ -316,7 +309,6 @@ JUAN: Eight million dollars. Over three years."></textarea>
   $('mirror').addEventListener('change', function () {
     localStorage.setItem('autocue_mirror', this.checked ? '1' : '0');
   });
-  $('sizeSetup').value = Math.max(28, Math.min(120, size));
   $('speed').value = speed;
   $('speedVal').textContent = speed + ' px/s';
 })();
