@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="color-scheme" content="dark">
 <title>Autocue</title>
 <style>
   :root {
@@ -58,13 +59,14 @@
   #prompter { position: fixed; inset: 0; z-index: 10; display: none; }
   #scroller {
     position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
-    -webkit-overflow-scrolling: touch; touch-action: pan-y;
+    touch-action: pan-y;
     scrollbar-width: none;          /* swipe / drag to reposition; no visible bar */
   }
   #scroller::-webkit-scrollbar { display: none; }
   #content {
     /* big top zone = lead-in runway you can swipe into before rolling */
     padding: 140vh clamp(20px, 7vw, 120px) 60vh;
+    contain: layout style;
     font-size: var(--cue-size, 52px); line-height: 1.5; font-weight: 600;
     white-space: pre-wrap; word-wrap: break-word;
     transition: transform .15s ease;
@@ -120,13 +122,13 @@ JUAN: Eight million dollars. Over three years."></textarea>
   <div id="prompter">
     <div id="scroller"><div id="content"></div></div>
     <div class="hud" id="hud">
-      <button id="playBtn">Play</button>
+      <button id="playBtn" aria-pressed="false">Play</button>
       <div class="group">
-        <span class="lbl long">Speed</span>
+        <label class="lbl long" for="speed">Speed</label>
         <button id="slower">&minus;</button>
         <input type="range" id="speed" min="5" max="260" step="1" value="60" style="width:200px;max-width:48vw;">
         <button id="faster">+</button>
-        <span id="speedVal">60 px/s</span>
+        <span id="speedVal" aria-live="polite">60 px/s</span>
       </div>
       <div class="group">
         <span class="lbl long">Size</span>
@@ -174,6 +176,7 @@ JUAN: Eight million dollars. Over three years."></textarea>
     if (playing) return;
     playing = true; lastT = 0;
     $('playBtn').textContent = 'Pause';
+    $('playBtn').setAttribute('aria-pressed', 'true');
     $('playBtn').classList.add('on');
     raf = requestAnimationFrame(frame);
     scheduleHide();
@@ -182,6 +185,7 @@ JUAN: Eight million dollars. Over three years."></textarea>
     playing = false;
     if (raf) cancelAnimationFrame(raf);
     $('playBtn').textContent = 'Play';
+    $('playBtn').setAttribute('aria-pressed', 'false');
     $('playBtn').classList.remove('on');
     showHud();
   }
@@ -277,11 +281,14 @@ JUAN: Eight million dollars. Over three years."></textarea>
   $('editBtn').addEventListener('click', function (e) { e.stopPropagation(); edit(); });
   $('fsBtn').addEventListener('click', function (e) {
     e.stopPropagation();
-    if (!document.fullscreenElement) {
-      (document.documentElement.requestFullscreen || function () {}).call(document.documentElement);
+    var fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!fsEl) {
+      var req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+      if (req) req.call(document.documentElement);
       this.classList.add('on');
     } else {
-      (document.exitFullscreen || function () {}).call(document);
+      var exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) exit.call(document);
       this.classList.remove('on');
     }
   });
@@ -298,8 +305,8 @@ JUAN: Eight million dollars. Over three years."></textarea>
       case ' ': case 'Enter': e.preventDefault(); toggle(); break;
       case 'ArrowUp': e.preventDefault(); setSpeed(speed + 2); bumpHud(); break;
       case 'ArrowDown': e.preventDefault(); setSpeed(speed - 2); bumpHud(); break;
-      case '+': case '=': setSize(size + 4); bumpHud(); break;
-      case '-': case '_': setSize(size - 4); bumpHud(); break;
+      case '+': case '=': e.preventDefault(); setSize(size + 4); bumpHud(); break;
+      case '-': case '_': e.preventDefault(); setSize(size - 4); bumpHud(); break;
       case 'Escape': edit(); break;
     }
   });
